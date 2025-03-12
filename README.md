@@ -1,4 +1,5 @@
 # LangChain.js MCP Adapters
+This is a modified version of [Langchain MCP adapter](https://github.com/vrknetha/langchainjs-mcp-adapters)
 
 This package provides adapters for using [Model Context Protocol (MCP)](https://github.com/modelcontextprotocol/specification) tools with LangChain.js. It enables seamless integration between LangChain.js and MCP servers, allowing you to use MCP tools in your LangChain applications.
 

@@ -72,7 +72,8 @@ export class MultiServerMCPClient {
 
             // Add optional properties if they exist
             if (config.env && typeof config.env === 'object') {
-              stdioConfig.env = config.env;
+              const env = { ...process.env, ...config.env };
+              stdioConfig.env = env;
             }
 
             if (typeof config.encoding === 'string') {
@@ -129,7 +130,8 @@ export class MultiServerMCPClient {
 
             // Add optional properties if they exist
             if (config.env && typeof config.env === 'object') {
-              stdioConfig.env = config.env;
+              const env = { ...process.env, ...config.env };
+              stdioConfig.env = env;
             }
 
             if (typeof config.encoding === 'string') {
@@ -183,6 +185,15 @@ export class MultiServerMCPClient {
     try {
       const configData = fs.readFileSync(configPath, 'utf8');
       const config = JSON.parse(configData) as MCPConfig;
+      for (const connection of Object.values(config.servers)) {
+        if (connection.transport === 'stdio')
+        {
+          if (connection.env) {
+            const env = {...process.env, ...connection.env};
+            connection.env = env as Record<string, string>;
+          }
+        }
+      }
       logger.info(`Loaded MCP configuration from ${configPath}`);
       return new MultiServerMCPClient(config.servers);
     } catch (error) {

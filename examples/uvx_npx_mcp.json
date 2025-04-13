@@ -1,0 +1,27 @@
+{
+  "servers": {
+    "math": {
+      "transport": "stdio",
+      "command": "python",
+      "args": ["./examples/math_server.py"]
+    },
+    "weather": {
+      "transport": "sse",
+      "url": "http://localhost:8000/sse"
+    },
+    "uvx-server": {
+      "transport": "uvx",
+      "packageName": "my-uvx-package",
+      "serverScript": "server.js",
+      "args": ["--port", "3000"],
+      "env": {
+        "DEBUG": "true"
+      }
+    },
+    "npx-server": {
+      "transport": "npx",
+      "packageName": "mcp-server-example",
+      "args": ["--port", "3001"]
+    }
+  }
+} 

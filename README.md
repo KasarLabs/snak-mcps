@@ -159,6 +159,20 @@ Example `mcp.json` file:
         "X-Custom-Header": "custom-value"
       },
       "useNodeEventSource": true
+    },
+    "uvx-server": {
+      "transport": "uvx",
+      "packageName": "my-uvx-package",
+      "serverScript": "server.js",
+      "args": ["--port", "3000"],
+      "env": {
+        "DEBUG": "true"
+      }
+    },
+    "npx-server": {
+      "transport": "npx",
+      "packageName": "mcp-server-example",
+      "args": ["--port", "3001"]
     }
   }
 }
@@ -174,6 +188,72 @@ try {
   // Use the client...
 } catch (error) {
   console.error('Failed to connect to any servers:', error.message);
+}
+```
+
+### Transport Types
+
+The client supports multiple transport types:
+
+#### 1. stdio
+
+Run a command as a child process and communicate with it via standard input/output.
+
+```json
+{
+  "transport": "stdio",
+  "command": "python",
+  "args": ["./examples/math_server.py"],
+  "env": {
+    "DEBUG": "true"
+  }
+}
+```
+
+#### 2. SSE (Server-Sent Events)
+
+Connect to a server using Server-Sent Events.
+
+```json
+{
+  "transport": "sse",
+  "url": "http://localhost:8000/sse",
+  "headers": {
+    "Authorization": "Bearer token"
+  },
+  "useNodeEventSource": true
+}
+```
+
+#### 3. UVX
+
+Run a UVX package as an MCP server.
+
+```json
+{
+  "transport": "uvx",
+  "packageName": "my-uvx-package",
+  "serverScript": "server.js",
+  "args": ["--port", "3000"],
+  "env": {
+    "DEBUG": "true"
+  }
+}
+```
+
+#### 4. NPX
+
+Run an NPM package as an MCP server.
+
+```json
+{
+  "transport": "npx",
+  "packageName": "mcp-server-example",
+  "serverScript": "start",
+  "args": ["--port", "3001"],
+  "env": {
+    "PORT": "3001"
+  }
 }
 ```
 
@@ -319,135 +399,4 @@ The package includes several example files that demonstrate how to use MCP adapt
 5. `gemini_example.ts` - Example using Google's Gemini models
 6. `logging_example.ts` - Example demonstrating logging capabilities
 7. `sse_with_headers_example.ts` - Example showing how to use custom headers with SSE connections
-
-To run the examples:
-
-```bash
-# First build the project
-npm run build
-
-# Start the weather server with SSE transport
-python examples/weather_server.py
-
-# In another terminal, run the examples using Node.js
-node dist/examples/math_example.js
-node dist/examples/sse_example.js
-node dist/examples/json_config_example.js
-```
-
-## Known Limitations
-
-### React Agents and LLM Compatibility
-
-The React agent implementation in LangChain has specific requirements for LLMs, including:
-
-1. The LLM must implement a `bindTools` method (e.g., ChatOpenAI and ChatGoogleGenerativeAI)
-2. The model may have specific expectations for tool schemas (especially Gemini models)
-
-If you encounter errors like these when using MCP tools with React agents:
-
-```
-llm [object Object] must define bindTools method
-```
-
-or:
-
-```
-GenerateContentRequest.tools[0].function_declarations[0].parameters.properties: should be non-empty for OBJECT type
-```
-
-We recommend:
-
-1. Using standard agent implementations like `initializeAgentExecutorWithOptions` instead of React agents
-2. Ensuring your MCP tools have well-defined parameter schemas
-3. Using a different LLM if you're experiencing model-specific schema issues
-
-### Tools with Empty Schemas
-
-Some LLM integrations, particularly Google's Gemini models, require tools to have non-empty parameter schemas. If you're using MCP tools that don't have input parameters (or have empty schemas) with these integrations, you might encounter errors.
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Connection Failures**: Ensure the MCP server is running and accessible
-2. **Tool Execution Errors**: Check the server logs for error messages
-3. **Transport Issues**: Verify the transport configuration (stdio or SSE)
-4. **Headers Not Applied**: When using headers with SSE, make sure you've installed the `eventsource` package and set `useNodeEventSource` to true
-
-### Debugging
-
-Enable debug logging to get more information:
-
-```typescript
-import { logger } from 'langchainjs-mcp-adapters';
-
-// Set logger level to debug
-logger.level = 'debug';
-```
-
-## Development
-
-For information about contributing to this project, including GitHub Actions workflows, npm publishing, and more, please see [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## License
-
-MIT
-
-## Using Server-Sent Events (SSE) with Headers
-
-When connecting to an MCP server via SSE and using custom headers (such as for authentication), there are some considerations to be aware of:
-
-### Node.js Environments
-
-For Node.js environments, the package will attempt to use the best available EventSource implementation to ensure headers are sent correctly:
-
-1. If the `extended-eventsource` package is installed (recommended): Headers will be properly sent with SSE requests.
-2. Otherwise, it will fall back to the standard `eventsource` package and attempt to configure it to send headers.
-
-Example with headers:
-
-```typescript
-// Pass headers and set useNodeEventSource to true for best header support
-await client.connectToServerViaSSE(
-  'my-server',
-  'https://example.com/mcp',
-  {
-    Authorization: 'Bearer my-token',
-    'X-Custom-Header': 'CustomValue',
-  },
-  true // useNodeEventSource=true ensures headers are sent correctly
-);
-```
-
-For the best experience with headers, install the recommended package:
-
-```bash
-npm install --save extended-eventsource
-```
-
-### Browser Environments
-
-The native browser EventSource API does not support custom headers. When running in a browser environment, consider:
-
-1. If headers (especially authorization) are required, use a server-side proxy that adds the required headers.
-2. Alternatively, pass authorization via query parameters (though this is less secure).
-
-### Testing Header Transmission
-
-If you need to verify that headers are being sent correctly, you can use a service like [Beeceptor](https://beeceptor.com/) to inspect requests:
-
-```typescript
-// Test header transmission
-await client.connectToServerViaSSE(
-  'test-server',
-  'https://my-endpoint.free.beeceptor.com',
-  {
-    Authorization: 'Bearer test-token',
-    'X-Custom-Header': 'Test',
-  },
-  true
-);
-```
-
-Then check the Beeceptor console to verify headers are being sent.
+8. `uvx_npx_example.ts` - Example demonstrating how to use UVX and NPX transport types

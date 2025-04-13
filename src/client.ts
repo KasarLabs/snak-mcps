@@ -6,6 +6,7 @@ import { loadMcpTools } from './tools.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import logger from './logger.js';
+import { spawn } from 'child_process';
 
 type StdioConnection = {
   transport: 'stdio';
@@ -23,7 +24,23 @@ type SSEConnection = {
   useNodeEventSource?: boolean;
 };
 
-type Connection = StdioConnection | SSEConnection;
+type UVXConnection = {
+  transport: 'uvx';
+  packageName: string;
+  serverScript: string;
+  args?: string[];
+  env?: Record<string, string>;
+};
+
+type NPXConnection = {
+  transport: 'npx';
+  packageName: string;
+  serverScript?: string;
+  args?: string[];
+  env?: Record<string, string>;
+};
+
+type Connection = StdioConnection | SSEConnection | UVXConnection | NPXConnection;
 
 type MCPConfig = {
   servers: Record<string, Connection>;
@@ -112,6 +129,66 @@ export class MultiServerMCPClient {
             }
 
             processedConnections[serverName] = sseConfig;
+          } else if (config.transport === 'uvx') {
+            if (!config.packageName) {
+              logger.warn(
+                `Server "${serverName}" is missing required packageName for UVX transport. Skipping.`
+              );
+              continue;
+            }
+
+            if (!config.serverScript) {
+              logger.warn(
+                `Server "${serverName}" is missing required serverScript for UVX transport. Skipping.`
+              );
+              continue;
+            }
+
+            const uvxConfig: UVXConnection = {
+              transport: 'uvx',
+              packageName: config.packageName,
+              serverScript: config.serverScript,
+            };
+
+            // Add optional properties if they exist
+            if (Array.isArray(config.args)) {
+              uvxConfig.args = config.args;
+            }
+
+            if (config.env && typeof config.env === 'object') {
+              const env = { ...process.env, ...config.env };
+              uvxConfig.env = env;
+            }
+
+            processedConnections[serverName] = uvxConfig;
+          } else if (config.transport === 'npx') {
+            if (!config.packageName) {
+              logger.warn(
+                `Server "${serverName}" is missing required packageName for NPX transport. Skipping.`
+              );
+              continue;
+            }
+
+            const npxConfig: NPXConnection = {
+              transport: 'npx',
+              packageName: config.packageName,
+            };
+
+            // Add optional properties if they exist
+            if (typeof config.serverScript === 'string') {
+              npxConfig.serverScript = config.serverScript;
+            }
+
+            if (Array.isArray(config.args)) {
+              npxConfig.args = config.args;
+            }
+
+            if (config.env && typeof config.env === 'object') {
+              const env = { ...process.env, ...config.env };
+              npxConfig.env = env;
+            }
+
+            processedConnections[serverName] = npxConfig;
           } else {
             logger.warn(
               `Server "${serverName}" has unsupported transport type: ${config.transport}. Skipping.`
@@ -356,10 +433,64 @@ export class MultiServerMCPClient {
             logger.debug(`Closing SSE transport for server "${serverName}"`);
             await transport.close();
           };
+        } else if (connection.transport === 'uvx') {
+          const { packageName, serverScript, args = [], env } = connection;
+
+          logger.debug(
+            `Creating UVX transport for server "${serverName}" with command: uvx ${packageName} ${serverScript} ${args.join(' ')}`
+          );
+          
+          // Construct the full command for UVX
+          const command = 'uvx';
+          const fullArgs = [packageName, serverScript, ...(args || [])];
+          
+          const transport = new StdioClientTransport({
+            command,
+            args: fullArgs,
+            env,
+          });
+          
+          client = new Client({
+            name: 'langchain-mcp-adapter',
+            version: '0.1.0',
+          });
+          await client.connect(transport);
+          
+          cleanup = async () => {
+            logger.debug(`Closing UVX transport for server "${serverName}"`);
+            await transport.close();
+          };
+        } else if (connection.transport === 'npx') {
+          const { packageName, serverScript, args = [], env } = connection;
+          
+          // Construct the full command for NPX
+          const command = 'npx';
+          const fullArgs = serverScript 
+            ? [packageName, serverScript, ...(args || [])]
+            : [packageName, ...(args || [])];
+          
+          logger.debug(
+            `Creating NPX transport for server "${serverName}" with command: npx ${fullArgs.join(' ')}`
+          );
+          
+          const transport = new StdioClientTransport({
+            command,
+            args: fullArgs,
+            env,
+          });
+          
+          client = new Client({
+            name: 'langchain-mcp-adapter',
+            version: '0.1.0',
+          });
+          await client.connect(transport);
+          
+          cleanup = async () => {
+            logger.debug(`Closing NPX transport for server "${serverName}"`);
+            await transport.close();
+          };
         } else {
-          // This should never happen due to the validation in the constructor
-          logger.error(`Unsupported transport type for server "${serverName}"`);
-          continue;
+          throw new Error(`Unsupported transport: ${(connection as any).transport}`);
         }
 
         this.clients.set(serverName, client);
@@ -480,6 +611,68 @@ export class MultiServerMCPClient {
 
     const connections: Record<string, Connection> = {
       [serverName]: connection,
+    };
+
+    this.connections = connections;
+    return this.initializeConnections();
+  }
+
+  /**
+   * Connect to an MCP server via UVX transport.
+   *
+   * @param serverName - A name to identify this server
+   * @param packageName - The UVX package to run
+   * @param serverScript - The server script within the package
+   * @param args - Optional arguments for the command
+   * @param env - Optional environment variables
+   * @returns A map of server names to arrays of tools
+   */
+  async connectToServerViaUVX(
+    serverName: string,
+    packageName: string,
+    serverScript: string,
+    args?: string[],
+    env?: Record<string, string>
+  ): Promise<Map<string, StructuredTool[]>> {
+    const connections: Record<string, Connection> = {
+      [serverName]: {
+        transport: 'uvx',
+        packageName,
+        serverScript,
+        args,
+        env,
+      },
+    };
+
+    this.connections = connections;
+    return this.initializeConnections();
+  }
+
+  /**
+   * Connect to an MCP server via NPX transport.
+   *
+   * @param serverName - A name to identify this server
+   * @param packageName - The NPX package to run
+   * @param serverScript - Optional server script within the package
+   * @param args - Optional arguments for the command
+   * @param env - Optional environment variables
+   * @returns A map of server names to arrays of tools
+   */
+  async connectToServerViaNPX(
+    serverName: string,
+    packageName: string,
+    serverScript?: string,
+    args?: string[],
+    env?: Record<string, string>
+  ): Promise<Map<string, StructuredTool[]>> {
+    const connections: Record<string, Connection> = {
+      [serverName]: {
+        transport: 'npx',
+        packageName,
+        serverScript,
+        args,
+        env,
+      },
     };
 
     this.connections = connections;
